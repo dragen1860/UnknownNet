@@ -291,11 +291,12 @@ if __name__ == '__main__':
 	# from label_status_start, exclusive to learn
 	for label_status in range(label_status_start , num_cls):
 		step = 0
-		accuracy = 0
+		accuracy = 0 # total accuracy of all learned labels
+		label_status_accuracy = 0 # current learning label accuracy
 		total_loss = 0
 		start_time = time.time()
 
-		while accuracy < 0.9:
+		while accuracy < 0.9 or label_status_accuracy < 0.9:
 			label = np.random.choice([label_status, num_cls-1], 1, p = [0.5, 0.5])
 			if label == label_status: # select training data
 				label = random.randint(0, label_status)
@@ -328,15 +329,28 @@ if __name__ == '__main__':
 			if step % 2000 == 0:
 				total = 500
 				right = 0
+				label_status_right = 0
+				label_status_total = 0
 				for i in range(total):
 					label_test = np.random.choice([label_status, num_cls-1], 1, p = [0.5, 0.5])
 					if label_test == label_status: # select training data
-						label_test = random.randint(0, label_status)
+						# sample label_status has prob of 0.5
+						label_test = random.sample([0, label_status], 1)[0]
+						# when prob 0.5 not sampled label_status, we random select a label from previous learned.
+						if label_test != label_status:
+							label_test = random.randint(0, label_status)
 						img = Variable(db.get_test(label_test).unsqueeze(0)).cuda()
 						pred, prob = net.predict(img) # [1, 6]
 						pred = pred[0]
 						if pred == label_test:
 							right += 1
+
+						# this is for statistics of current learning label
+						if label_test == label_status: # sampled label is current learning label
+							label_status_total += 1
+							if pred == label_test: # and pred is right
+								label_status_right += 1
+
 					else: # select unknown data
 						label_test = random.randint(label_status + 1, num_cls - 1)
 						img = Variable(db.get_test(label_test).unsqueeze(0)).cuda()
@@ -346,7 +360,8 @@ if __name__ == '__main__':
 							right += 1
 
 				accuracy = right / total
-				print('>> current progress:', label_status, 'step:', step, 'accuracy:', accuracy)
+				label_status_accuracy = label_status_right / label_status_total
+				print('>> current progress:', label_status, 'step:', step, 'accuracy:', accuracy, 'learning accuracy:', label_status_accuracy)
 				tb.add_scalar('accuracy', accuracy)
 
 

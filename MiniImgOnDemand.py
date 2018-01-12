@@ -47,7 +47,7 @@ class MiniImgOnDemand:
 
 		# requiredFiles = ['train','val','test']
 		self.ImagesDir = os.path.join(root, 'images')  # image path
-		self.data = loadSplit(splitFile=os.path.join(root, 'train' + '.csv'))  # csv path
+		self.data = loadSplit(splitFile=os.path.join(root, type + '.csv'))  # csv path
 		self.data = collections.OrderedDict(sorted(self.data.items()))  # sort dict by !key! not value.
 		# as the label of imagenet is not from 0, here re-label it
 		self.classes_dict = {list(self.data.keys())[i]: i for i in
@@ -79,6 +79,37 @@ class MiniImgOnDemand:
 		sample = self.transform(sample[0])
 		# size: [3, 224, 224]
 		return sample
+
+	def fewshot_get(self, label, k_shot):
+		"""
+		for few-shot, the got imgs should keep k_shot num, and the other to test.
+		:param label:
+		:return:
+		"""
+		# we can NOT do shuffle here, since we need to get the same k_shot imgs
+		# when multiple requesting isssued.
+		imgs = self.data[label][:k_shot]
+		sample = random.sample(imgs, 1)
+		sample = self.transform(sample[0])
+		print('few-shot get:',imgs)
+		# size: [3, 224, 224]
+		return sample
+
+	def fewshot_get_test(self, label, k_shot):
+		"""
+		for few-shot, the got imgs should keep k_shot num, and the other to test.
+		:param label:
+		:return:
+		"""
+		# we can NOT do shuffle here, since we need to get the same k_shot imgs
+		# when multiple requesting isssued.
+		imgs = self.data[label][k_shot:]
+		sample = random.sample(imgs, 1)
+		sample = self.transform(sample[0])
+		print('few-shot get_test:',imgs)
+		# size: [3, 224, 224]
+		return sample
+
 
 	def batch(self, label):
 		"""

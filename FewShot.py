@@ -30,9 +30,9 @@ if __name__ == '__main__':
 	params = sum([np.prod(p.size()) for p in model_parameters])
 	print('total params:', params)
 
-	num_cls = 64
-	# 1. test previous model performance
-	for label_status in range(label_status_start + 1):
+	num_cls = 36
+	# 1. test previous model performance, exclusive
+	for label_status in range(label_status_start):
 		total = 500
 		right = 0
 		for i in range(total):
@@ -56,22 +56,31 @@ if __name__ == '__main__':
 		print('>> verify learning:', label_status,  'accuracy:', accuracy)
 
 
-	# from label_status_start, exclusive to learn
-	for label_status in range(label_status_start + 1, num_cls):
+	# 2.from label_status_start, exclusive to learn
+	# NOTICE: for the following stage, we only have several images to few-shot learning, we need to make a tradeoff,
+	# to learn but not overfitting.
+	n_way = 5
+	k_shot = 5
+	for label_status in range(label_status_start , label_status_start + num_cls):
 		step = 0
 		accuracy = 0
 		total_loss = 0
 		start_time = time.time()
 
 		while accuracy < 0.9:
-			label = np.random.choice([label_status, num_cls-1], 1, p = [0.5, 0.5])
-			if label == label_status: # select training data
-				label = random.randint(0, label_status)
-				img = Variable(db.get(label).unsqueeze(0)).cuda()
+			explore = np.random.choice([label_status, label_status_start-1], 1, p = [0.5, 0.5])
+			if explore == label_status: # select current few-shot img, it has up-to k_shot number of imgs
+				# we need to understand our test dataset also index from 0
+				# index in network: label or label_status
+				# index in db: label - label_status_start
+				# if not explore, we just use current few-shot imgs and previous learned few-shot imgs
+				label = random.randint(label_status_start, label_status)
+				img = Variable(db.fewshot_get(label - label_status_start).unsqueeze(0)).cuda()
 				losses, prob = net(img, [label], optimizer)
-			else: # select unknown data
-				label = random.randint(label_status + 1, num_cls - 1)
-				img = Variable(db.get(label).unsqueeze(0)).cuda()
+			else: # use other data as unknown data, we don't use its label
+				# use the following data as unknown data
+				label = random.randint(label_status + 1, label_status_start + num_cls - 1)
+				img = Variable(db.fewshot_get(label - label_status_start).unsqueeze(0)).cuda()
 				losses, prob = net(img, [-1], optimizer)
 
 			# iterate loss from last to end
@@ -93,6 +102,10 @@ if __name__ == '__main__':
 				print('current progress:',label_status, 'step:', step, 'loss:', total_loss/1000)
 				total_loss = 0
 
+
+
+			# as we only have k_shot imgs and no other data to help us decide whether continue to learn to terminate.
+			#
 			if step % 2000 == 0:
 				total = 500
 				right = 0
@@ -119,4 +132,4 @@ if __name__ == '__main__':
 
 
 		print('**time for progress:', label_status, time.time() - start_time)
-		net.save_mdl('unknown.mdl')
+
