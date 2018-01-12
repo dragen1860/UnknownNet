@@ -60,7 +60,7 @@ class UnknownNet(nn.Module):
 		return [-1], prob
 
 
-	def forward(self, input, label, train = True):
+	def forward(self, input, label, optimizer, train = True):
 		"""
 		label in network: train and backprop
 		label new to network: assign label and train, backprop
@@ -71,6 +71,10 @@ class UnknownNet(nn.Module):
 		:return:
 		"""
 		assert input.size(0) == 1
+		if random.randint(0, 2000) < 2:
+			need_print = True
+		else:
+			need_print = False
 
 		# [1, c_, h_, w_] => pre_sz: [1, c, h, w]
 		x = self.pre(input)
@@ -85,14 +89,18 @@ class UnknownNet(nn.Module):
 				self.table_p += 1 # skip unknown node
 				mod = ResCell(self.pre_sz, self.node_num).cuda()
 				self.add_module('node:%d'%len(self.tree), mod)
+				optimizer.add_param_group({'params': mod.parameters()})
 				self.tree.append(mod) # append new cell
 				self.table.extend([-1] * self.node_num) # initialize new cell's table
 
-				print('add new cell, current network:', self)
+				print('ADD new cell, current network:', self)
 			# now write down label info
 			self.table[self.table_p] = label
 			self.table_p += 1
+			if need_print: print('Table:', self.table)
 
+		# loss chain
+		losses = []
 		## now forward recursively
 		# the forward process will terminate early if the appropriate condition triggered.
 		for cellctr, cell in enumerate(self.tree):
@@ -102,38 +110,33 @@ class UnknownNet(nn.Module):
 			# logits: [1, node_num], rout: [1, c2, h, w]
 			rout, logits = cell(rin)
 			# prob: [1, 6]
-			prob = F.softmax(logits, dim= 1)
+			prob = F.log_softmax(logits, dim= 1)
 			# get pred
 			_, cellidx = torch.max(prob, dim = 1)
 			cellidx = cellidx.data[0] # [1] => scalar
 			# get its real label info
 			pred = self.table[cellctr * self.node_num + cellidx]
 
-			"""
-			return loss:
-				1. pred is unknown, but label is known and in currently layer
-				2. pred is known, but label is unknown
-				3. pred is known and label is in current cell as well
-				4. pred is known, but label is not in current cell
-				
-			go deeper:
-				1. pred is unknown, label is known but not in current cell
-				
-			train former cell:
-				none
-				
-			The forward process will terminate once it reach the right situation. What I mean the right sitation is the 
-			either it predicts right or the loss function can be calucuated already.
-			once it forward process need go deeper as the case: pred is unknown and label also not in current cell.
-			In this case, currect cell make a right decision and the network need forward utils it read a judgable stage.
-				
-			"""
+			if need_print:
+				print('  prob:', prob.cpu().data[0].numpy(), 'label idx:',cellidx)
+
+
+
 			# 1. check pred in known node or unknown node
 			# for unknown pred, if label is unknown, then loss = 0, if label is known, it should go deeper.
 			if pred == -1: # 1. if pred is unknown, the pred can occur not only in last node, but also in other -1 position, we treat it as equal
 				if label == -1: # 1.1 pred is unknow and groundtruth is unknown
-					loss = self.criteon(prob, Variable(torch.LongTensor([cellidx])).cuda())
-					return loss, prob
+					if cellctr == len(self.tree) - 1: # this is the last cell
+						loss = self.criteon(prob, Variable(torch.LongTensor([cellidx])).cuda())
+						losses.append(loss)
+						if need_print: print('\tpred: -1, label: -1, last cell, loss:', loss.data[0])
+						return losses, prob
+					else: # this is not the last cell
+						# we calcuate loss by ourself.
+						loss = - prob[0][cellidx]
+						if need_print: print('\tpred: -1, label: -1, loss: %f go NEXT'%loss.data[0])
+						losses.append(loss)
+						continue
 				# check the groundtruth whether in current cell table, then decide whether to go ahead
 				elif label in self.table[cellctr * self.node_num : cellctr * self.node_num + self.node_num]:
 					# 1.2 pred is unknown, label is known node in current cell
@@ -142,9 +145,14 @@ class UnknownNet(nn.Module):
 					labelidx = self.table.index(label)
 					labelidx = labelidx % self.node_num # offset in current cell
 					loss = self.criteon(prob, Variable(torch.LongTensor([labelidx])).cuda())
-					return loss, prob
+					losses.append(loss)
+					if need_print: print('\tpred: -1, label: %d, in cur cell, loss:'%label, loss.data[0])
+					return losses, prob
 				else: # 1.3 pred is unknown, label is known but not in current layer, that's, in next layer.
 					# in this case, it must have next cell.
+					loss = self.criteon(prob, Variable(torch.LongTensor([self.node_num - 1])).cuda())
+					losses.append(loss)
+					if need_print: print('\tpred: -1, label: %d, loss: %f, in next cell, go NEXT'%(label,loss.data[0]))
 					continue # just forward
 
 
@@ -153,7 +161,9 @@ class UnknownNet(nn.Module):
 				# just train curent cell
 				if label == -1:
 					loss = self.criteon(prob, Variable(torch.LongTensor([self.node_num - 1])).cuda())
-					return loss, prob
+					losses.append(loss)
+					if need_print: print('\tpred: %d, label: -1, loss:'%pred, loss.data[0])
+					return losses, prob
 				# 2.2 pred is known and label is in current cell as well.
 				# just use cross-entory to calculate its loss
 				# its loss maybe 0 or not , depending on its label
@@ -162,7 +172,9 @@ class UnknownNet(nn.Module):
 					labelidx = self.table.index(label)
 					labelidx = labelidx % self.node_num
 					loss = self.criteon(prob, Variable(torch.LongTensor([labelidx])).cuda())
-					return loss, prob
+					losses.append(loss)
+					if need_print: print('\tpred: %d, label: %d, in cur cell, loss:'%(pred, label), loss.data[0])
+					return losses, prob
 				# 2.3 pred is known, but label is not in current cell.
 				else:
 					# should train current cell
@@ -170,7 +182,9 @@ class UnknownNet(nn.Module):
 					labelidx = self.table.index(label)
 					labelidx = labelidx % self.node_num
 					loss = self.criteon(prob, Variable(torch.LongTensor([self.node_num - 1])).cuda())
-					return loss, prob
+					losses.append(loss)
+					if need_print: print('\tpred: %d, label: %d, NEXT cell, loss:'%(pred, label), loss.data[0])
+					return losses, prob
 
 
 
@@ -178,11 +192,15 @@ if __name__ == '__main__':
 	from MiniImgOnDemand import MiniImgOnDemand
 	import random
 	import numpy as np
+	from tensorboardX import SummaryWriter
+	import time
 
 	db = MiniImgOnDemand('../mini-imagenet/', type='train')
 	net = UnknownNet().cuda()
+	tb = SummaryWriter('runs')
 
-	optimizer = optim.Adam(net.parameters(), lr= 2e-5)
+	optimizer = optim.Adam(net.parameters(), lr= 1e-5)
+	print(optimizer)
 
 	model_parameters = filter(lambda p: p.requires_grad, net.parameters())
 	params = sum([np.prod(p.size()) for p in model_parameters])
@@ -193,57 +211,61 @@ if __name__ == '__main__':
 		step = 0
 		accuracy = 0
 		total_loss = 0
+		start_time = time.time()
 
 		while accuracy < 0.9:
 			label = np.random.choice([label_status, num_cls-1], 1, p = [0.5, 0.5])
 			if label == label_status: # select training data
 				label = random.randint(0, label_status)
 				img = Variable(db.get(label).unsqueeze(0)).cuda()
-				loss, prob = net(img, [label])
-				_, pred = torch.max(prob, dim = 1)
-				pred = pred.data[0]
-				print('label:', label, 'pred:', pred)
+				losses, prob = net(img, [label], optimizer)
 			else: # select unknown data
 				label = random.randint(label_status + 1, num_cls - 1)
 				img = Variable(db.get(label).unsqueeze(0)).cuda()
-				loss, prob = net(img, [-1])
-				_, pred = torch.max(prob, dim = 1)
-				pred = pred.data[0]
-				print('label:', -1, 'pred:', pred)
+				losses, prob = net(img, [-1], optimizer)
 
-			optimizer.zero_grad()
-			loss.backward()
-			optimizer.step()
+			# iterate loss from last to end
+			for i, loss in enumerate(reversed(losses)):
+				optimizer.zero_grad()
+				if i == len(losses) -1 : # for the last backward, remove all tmp result
+					loss.backward()
+				else:
+					loss.backward(retain_graph=True)
+				optimizer.step()
 			step += 1
-			total_loss += loss.data[0]
+			total_loss += losses[-1].data[0]
 
 			if step % 100 == 0:
-				print('current progress:',label_status, 'step:', step, 'loss:', total_loss)
+				tb.add_scalar('loss', losses[-1].data[0])
+
+			if step % 1000 == 0:
+				print('current progress:',label_status, 'step:', step, 'loss:', total_loss/1000)
 				total_loss = 0
 
-			if step % 500 == 0:
-				total = 100
+			if step % 2000 == 0:
+				total = 500
 				right = 0
 				for i in range(total):
 					label_test = np.random.choice([label_status, num_cls-1], 1, p = [0.5, 0.5])
 					if label_test == label_status: # select training data
 						label_test = random.randint(0, label_status)
-						img = Variable(db.get(label_test).unsqueeze(0)).cuda()
+						img = Variable(db.get_test(label_test).unsqueeze(0)).cuda()
 						pred, prob = net.predict(img) # [1, 6]
 						pred = pred[0]
 						if pred == label_test:
 							right += 1
 					else: # select unknown data
 						label_test = random.randint(label_status + 1, num_cls - 1)
-						img = Variable(db.get(label_test).unsqueeze(0)).cuda()
+						img = Variable(db.get_test(label_test).unsqueeze(0)).cuda()
 						pred, prob = net.predict(img) # [1, 6]
 						pred = pred[0]
 						if pred == -1:
 							right += 1
 
 				accuracy = right / total
-				print('current progress:', label_status, 'step:', step, 'accuracy:', accuracy)
+				print('>> current progress:', label_status, 'step:', step, 'accuracy:', accuracy)
+				tb.add_scalar('accuracy', accuracy)
 
 
-
+		print('time for progress:', label_status, time.time() - start_time)
 

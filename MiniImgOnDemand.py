@@ -47,7 +47,7 @@ class MiniImgOnDemand:
 
 		# requiredFiles = ['train','val','test']
 		self.ImagesDir = os.path.join(root, 'images')  # image path
-		self.data = loadSplit(splitFile=os.path.join(root, type + '.csv'))  # csv path
+		self.data = loadSplit(splitFile=os.path.join(root, 'train' + '.csv'))  # csv path
 		self.data = collections.OrderedDict(sorted(self.data.items()))  # sort dict by !key! not value.
 		# as the label of imagenet is not from 0, here re-label it
 		self.classes_dict = {list(self.data.keys())[i]: i for i in
@@ -65,7 +65,17 @@ class MiniImgOnDemand:
 	def get(self, label):
 		if label != self.cur_label:
 			self.batch(label)
-		sample = random.sample(self.buff, 1)
+		num = int( len(self.buff) * 0.9 )
+		sample = random.sample(self.buff[:num], 1)
+		sample = self.transform(sample[0])
+		# size: [3, 224, 224]
+		return sample
+
+	def get_test(self, label):
+		if label != self.cur_label:
+			self.batch(label)
+		num = int( len(self.buff) * 0.9 )
+		sample = random.sample(self.buff[num:], 1)
 		sample = self.transform(sample[0])
 		# size: [3, 224, 224]
 		return sample
