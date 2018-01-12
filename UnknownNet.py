@@ -5,7 +5,7 @@ from torch import optim
 from torch.nn import functional as F
 from torch.autograd import Variable
 from Cell import ResCell
-
+import pickle
 
 class UnknownNet(nn.Module):
 
@@ -33,8 +33,60 @@ class UnknownNet(nn.Module):
 
 
 		self.criteon = nn.CrossEntropyLoss()
+		print('initial network:', self)
 
-		print('current network:', self)
+	def save_mdl(self, filename):
+		"""
+		As the network is highly dynamic, we need to known current learning status when saveing model.
+		:param label_status:
+		:param filename:
+		:return:
+		"""
+		with open(filename, 'wb') as f:
+			torch.save(self.state_dict(),f)
+		with open(filename+'.meta', 'wb') as f:
+			meta = {
+				'table': self.table,
+				'table_p': self.table_p
+			}
+			pickle.dump(meta, f)
+			print('saved meta:', meta)
+			print('saved model to :', filename, 'and meta:', filename + '.meta')
+
+	def load_mdl(self, filename, optimizer):
+		"""
+		To recover the network, we need to learn current learning progress, that's: label_status
+		You should call this function after __init__
+		:param filename:
+		:return:
+		"""
+		meta = filename + '.meta'
+		with open(meta, 'rb') as f:
+			meta = pickle.load(f)
+			self.table_p = meta['table_p']
+			self.table = meta['table']
+			print('load meta:', meta)
+
+		num = self.table_p // self.node_num + 1
+		for i in range(num -1): # as we have one cell in __init__ stage.
+			mod = ResCell(self.pre_sz, self.node_num).cuda()
+			self.add_module('node:%d' % len(self.tree), mod)
+			optimizer.add_param_group({'params': mod.parameters()})
+			self.tree.append(mod)  # append new cell
+		print('recover network:', self)
+
+		with open(filename, 'rb') as f:
+			self.load_state_dict(torch.load(f))
+			print('loaded weights done.')
+
+		# return the maximum label in current table to indicate the learner should learn
+		# from this label_status
+		return np.array(self.table).max()
+
+
+
+
+
 
 	def predict(self, input):
 		assert input.size(0) == 1
@@ -71,7 +123,7 @@ class UnknownNet(nn.Module):
 		:return:
 		"""
 		assert input.size(0) == 1
-		if random.randint(0, 2000) < 2:
+		if random.randint(1, 2000) < 2:
 			need_print = True
 		else:
 			need_print = False
@@ -93,11 +145,10 @@ class UnknownNet(nn.Module):
 				self.tree.append(mod) # append new cell
 				self.table.extend([-1] * self.node_num) # initialize new cell's table
 
-				print('ADD new cell, current network:', self)
+				# print('ADD new cell, current network:', self)
 			# now write down label info
 			self.table[self.table_p] = label
 			self.table_p += 1
-			if need_print: print('Table:', self.table)
 
 		# loss chain
 		losses = []
@@ -193,21 +244,26 @@ if __name__ == '__main__':
 	import random
 	import numpy as np
 	from tensorboardX import SummaryWriter
-	import time
+	import time,os
 
 	db = MiniImgOnDemand('../mini-imagenet/', type='train')
 	net = UnknownNet().cuda()
 	tb = SummaryWriter('runs')
 
 	optimizer = optim.Adam(net.parameters(), lr= 1e-5)
-	print(optimizer)
+
+	if os.path.exists('unknown.mdl'):
+		label_status_start = net.load_mdl('unknown.mdl', optimizer)
+		print('learning from label:', label_status_start)
+	else:
+		label_status_start = 0
 
 	model_parameters = filter(lambda p: p.requires_grad, net.parameters())
 	params = sum([np.prod(p.size()) for p in model_parameters])
 	print('total params:', params)
 
 	num_cls = 64
-	for label_status in range(num_cls):
+	for label_status in range(label_status_start, num_cls):
 		step = 0
 		accuracy = 0
 		total_loss = 0
@@ -225,13 +281,14 @@ if __name__ == '__main__':
 				losses, prob = net(img, [-1], optimizer)
 
 			# iterate loss from last to end
+			optimizer.zero_grad()
 			for i, loss in enumerate(reversed(losses)):
-				optimizer.zero_grad()
 				if i == len(losses) -1 : # for the last backward, remove all tmp result
 					loss.backward()
 				else:
 					loss.backward(retain_graph=True)
-				optimizer.step()
+			optimizer.step()
+
 			step += 1
 			total_loss += losses[-1].data[0]
 
@@ -267,5 +324,6 @@ if __name__ == '__main__':
 				tb.add_scalar('accuracy', accuracy)
 
 
-		print('time for progress:', label_status, time.time() - start_time)
+		print('**time for progress:', label_status, time.time() - start_time)
+		net.save_mdl('unknown.mdl')
 
