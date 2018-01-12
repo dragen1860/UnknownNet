@@ -17,7 +17,7 @@ class ResCell(nn.Module):
 		self.inplanes = size[1] * 2
 		outc = size[1]
 
-		self.cell = self._make_layer(resnet.BasicBlock, outc, 1)
+		self.cell = self._make_layer(resnet.BasicBlock, outc, 2)
 
 		self.out = nn.Sequential(nn.Linear(c*h*w, 128),
 		                         nn.ReLU(inplace=True),

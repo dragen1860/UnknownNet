@@ -200,10 +200,16 @@ if __name__ == '__main__':
 				label = random.randint(0, label_status)
 				img = Variable(db.get(label).unsqueeze(0)).cuda()
 				loss, prob = net(img, [label])
+				_, pred = torch.max(prob, dim = 1)
+				pred = pred.data[0]
+				print('label:', label, 'pred:', pred)
 			else: # select unknown data
 				label = random.randint(label_status + 1, num_cls - 1)
 				img = Variable(db.get(label).unsqueeze(0)).cuda()
 				loss, prob = net(img, [-1])
+				_, pred = torch.max(prob, dim = 1)
+				pred = pred.data[0]
+				print('label:', -1, 'pred:', pred)
 
 			optimizer.zero_grad()
 			loss.backward()
