@@ -80,8 +80,8 @@ class UnknownNet(nn.Module):
 			print('loaded weights done.')
 
 		# return the maximum label in current table to indicate the learner should learn
-		# from this label_status
-		return np.array(self.table).max()
+		# from this label_status next label
+		return np.array(self.table).max() + 1
 
 
 
@@ -263,8 +263,8 @@ if __name__ == '__main__':
 	print('total params:', params)
 
 	num_cls = 64
-	# 1. test previous model performance
-	for label_status in range(label_status_start + 1):
+	# 1. test previous model performance, exclusive
+	for label_status in range(label_status_start ):
 		total = 500
 		right = 0
 		for i in range(total):
@@ -289,7 +289,7 @@ if __name__ == '__main__':
 
 
 	# from label_status_start, exclusive to learn
-	for label_status in range(label_status_start + 1, num_cls):
+	for label_status in range(label_status_start , num_cls):
 		step = 0
 		accuracy = 0
 		total_loss = 0
