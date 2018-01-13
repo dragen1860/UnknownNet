@@ -6,17 +6,19 @@ from torch.nn import functional as F
 from torch.autograd import Variable
 from Cell import ResCell
 import pickle
+import numpy as np
+import random
 
 class UnknownNet(nn.Module):
 
 	# node number for each cell, it should include a unknown node
-	node_num = 2
+	node_num = 4
 
 	def __init__(self):
 		super(UnknownNet, self).__init__()
 
 		# build pre-process network
-		conv1 = nn.Conv2d(3, 16, kernel_size=7, stride=3, padding=1, bias=False)
+		conv1 = nn.Conv2d(3, 16, kernel_size=5, stride=3, padding=1, bias=False)
 		bn1 = nn.BatchNorm2d(16)
 		relu1 = nn.ReLU(inplace=True)
 		maxpool1 = nn.MaxPool2d(kernel_size=3, stride=1, padding=1)
@@ -262,40 +264,36 @@ if __name__ == '__main__':
 	params = sum([np.prod(p.size()) for p in model_parameters])
 	print('total params:', params)
 
+	# this is the total training dataset label, from [0, 64)
 	num_cls = 64
-	# 1. test previous model performance, exclusive
-	for label_status in range(label_status_start ):
-		total = 500
+
+
+	## 1. test previous model performance, exclusive, [0, label_status_start)
+	for label_test in range(label_status_start):
+		total = 100
 		right = 0
 		for i in range(total):
-			label_test = np.random.choice([label_status, num_cls - 1], 1, p=[0.5, 0.5])
-			if label_test == label_status:  # select training data
-				label_test = random.randint(0, label_status)
-				img = Variable(db.get_test(label_test).unsqueeze(0)).cuda()
-				pred, prob = net.predict(img)  # [1, 6]
-				pred = pred[0]
-				if pred == label_test:
-					right += 1
-			else:  # select unknown data
-				label_test = random.randint(label_status + 1, num_cls - 1)
-				img = Variable(db.get_test(label_test).unsqueeze(0)).cuda()
-				pred, prob = net.predict(img)  # [1, 6]
-				pred = pred[0]
-				if pred == -1:
-					right += 1
+			# all choose current label
+			# use db_prev as it's testing checkpoint performance
+			img = Variable(db.get_test(label_test).unsqueeze(0)).cuda()
+			pred, prob = net.predict(img)  # [1, 6]
+			pred = pred[0]
+			if pred == label_test:
+				right += 1
 
 		accuracy = right / total
-		print('>> verify learning:', label_status,  'accuracy:', accuracy)
+		print('>> verify learning:', label_test,  'accuracy:', accuracy)
 
 
-	# from label_status_start, exclusive to learn
+	## 2. training from label_status_start, exclusive to learn
 	for label_status in range(label_status_start , num_cls):
-		step = 0
+		step = 0  # steps for single class
 		accuracy = 0 # total accuracy of all learned labels
 		label_status_accuracy = 0 # current learning label accuracy
 		total_loss = 0
 		start_time = time.time()
 
+		# complete learning once total accuracy and current learning label accuracy satisfy some threshold
 		while accuracy < 0.9 or label_status_accuracy < 0.9:
 			label = np.random.choice([label_status, num_cls-1], 1, p = [0.5, 0.5])
 			if label == label_status: # select training data
@@ -361,7 +359,8 @@ if __name__ == '__main__':
 
 				accuracy = right / total
 				label_status_accuracy = label_status_right / label_status_total
-				print('>> current progress:', label_status, 'step:', step, 'accuracy:', accuracy, 'learning accuracy:', label_status_accuracy)
+				print('>> current progress:', label_status, 'step:', step,
+				      'accuracy:', accuracy, 'learning precision: %f'%label_status_accuracy, 'in', label_status_total)
 				tb.add_scalar('accuracy', accuracy)
 
 

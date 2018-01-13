@@ -19,10 +19,16 @@ class MiniImgOnDemand:
 	def __init__(self, root, type='train'):
 		self.root = root
 		self.resize = 84
+
+		# this is a naive version of transfrom, we have different setting for few-shot learning
 		self.transform = transforms.Compose([lambda x: Image.open(x).convert('RGB'),
-		                                     lambda x: x.resize((self.resize, self.resize)),
+		                                     transforms.RandomResizedCrop(self.resize),
+		                                     transforms.RandomHorizontalFlip(),
+		                                     transforms.RandomVerticalFlip(),
+		                                     transforms.RandomRotation(90),
+		                                     transforms.ColorJitter(0.2,0.2,0.1,0.1),
 		                                     transforms.ToTensor(),
-		                                     transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
+		                                     transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 		                                     ])
 
 		def loadSplit(splitFile):
@@ -63,6 +69,11 @@ class MiniImgOnDemand:
 		self.buff = []
 
 	def get(self, label):
+		"""
+		this is for training's training stage
+		:param label:
+		:return:
+		"""
 		if label != self.cur_label:
 			self.batch(label)
 		num = int( len(self.buff) * 0.9 )
@@ -72,11 +83,27 @@ class MiniImgOnDemand:
 		return sample
 
 	def get_test(self, label):
+		"""
+		THis is for training's validation stage to get data.
+		:param label:
+		:return:
+		"""
 		if label != self.cur_label:
 			self.batch(label)
 		num = int( len(self.buff) * 0.9 )
 		sample = random.sample(self.buff[num:], 1)
-		sample = self.transform(sample[0])
+
+		transform = transforms.Compose([lambda x: Image.open(x).convert('RGB'),
+			                                     transforms.Resize((self.resize, self.resize)),
+		                                     # transforms.RandomResizedCrop(self.resize),
+		                                     # transforms.RandomHorizontalFlip(),
+		                                     # transforms.RandomVerticalFlip(),
+		                                     # transforms.RandomRotation(90),
+		                                     # transforms.ColorJitter(0.2,0.2,0.1,0.1),
+		                                     transforms.ToTensor(),
+		                                     transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+		                                     ])
+		sample = transform(sample[0])
 		# size: [3, 224, 224]
 		return sample
 
@@ -89,9 +116,11 @@ class MiniImgOnDemand:
 		# we can NOT do shuffle here, since we need to get the same k_shot imgs
 		# when multiple requesting isssued.
 		imgs = self.data[label][:k_shot]
-		sample = random.sample(imgs, 1)
-		sample = self.transform(sample[0])
-		print('few-shot get:',imgs)
+		sample = random.sample(imgs, 1)[0]
+		sample = os.path.join(self.root, 'images', sample)
+
+		# print('few-shot get:',sample)
+		sample = self.transform(sample)
 		# size: [3, 224, 224]
 		return sample
 
@@ -104,9 +133,20 @@ class MiniImgOnDemand:
 		# we can NOT do shuffle here, since we need to get the same k_shot imgs
 		# when multiple requesting isssued.
 		imgs = self.data[label][k_shot:]
-		sample = random.sample(imgs, 1)
-		sample = self.transform(sample[0])
-		print('few-shot get_test:',imgs)
+		sample = random.sample(imgs, 1)[0]
+		sample = os.path.join(self.root, 'images', sample)
+		transform = transforms.Compose([lambda x: Image.open(x).convert('RGB'),
+			                                     transforms.Resize((self.resize, self.resize)),
+		                                     # transforms.RandomResizedCrop(self.resize),
+		                                     # transforms.RandomHorizontalFlip(),
+		                                     # transforms.RandomVerticalFlip(),
+		                                     # transforms.RandomRotation(90),
+		                                     # transforms.ColorJitter(0.2,0.2,0.1,0.1),
+		                                     transforms.ToTensor(),
+		                                     transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+		                                     ])
+		# print('few-shot get_test:',sample)
+		sample = transform(sample)
 		# size: [3, 224, 224]
 		return sample
 
@@ -126,9 +166,9 @@ class MiniImgOnDemand:
 
 if __name__ == '__main__':
 	from matplotlib import pyplot as plt
-	db = MiniImgOnDemand('../mini-imagenet/', type='train')
+	db = MiniImgOnDemand('../mini-imagenet/', type='test', normalize= False)
 
-	label = random.randint(0, 63)
+	label = random.randint(0, 16)
 	for i in range(16):
 		plt.subplot(4,4,i+1)
 		plt.imshow(db.get(label).transpose(1,2).transpose(0,2).numpy())
