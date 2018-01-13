@@ -10,6 +10,11 @@ from torch.autograd import Variable
 class ResCell(nn.Module):
 	# size: (1, 64, 74, 74)
 	def __init__(self, size, node_num):
+		"""
+		We need the size of feature to calculate the input dim of linear layer.
+		:param size:
+		:param node_num:
+		"""
 		super(ResCell, self).__init__()
 
 		# from inplances

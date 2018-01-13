@@ -58,8 +58,8 @@ if __name__ == '__main__':
 		label_status_accuracy = 0 # validation accracy for current learning class
 		start_time = time.time() # time elapsed per print time
 
-		while accuracy < 0.8 or label_status_accuracy < 0.8:
-			explore = np.random.choice([label_status, label_status_start - 1], 1, p = [0.5, 0.5])
+		while accuracy < 0.9 or label_status_accuracy < 0.9:
+			explore = np.random.choice([label_status, label_status_start - 1], 1, p = [0.9, 0.1])[0]
 			if explore == label_status: # select current few-shot img, it has up-to k_shot number of imgs
 				# we need to understand our test dataset also index from 0
 				# index in network: label or label_status
@@ -87,9 +87,9 @@ if __name__ == '__main__':
 
 			step += 1
 			total_loss += losses[-1].data[0]
-			if step % 30 == 0:
-				print('learning:',label_status, 'step:', step, 'loss:', total_loss/30)
-				total_loss = 0
+			# if step % 30 == 0:
+			# 	print('learning:',label_status, 'step:', step, 'loss:', total_loss/30)
+			# 	total_loss = 0
 
 			# validation now
 			# as we only have k_shot imgs and no other data to help us decide whether continue to learn to terminate.
@@ -101,8 +101,8 @@ if __name__ == '__main__':
 				label_status_right = 0
 
 				for i in range(total):
-					explore = np.random.choice([0, 1], 1, p = [0.5, 0.5])
-					if explore == 0: # select training data, no exploration
+					explore = np.random.choice([0, 1], 1, p = [0.9, 0.1])[0]
+					if explore == 0: # select training data, no exploration, 0.9
 						# from current learning label random select one
 						# NOTICE: must use fewshot_get HERE
 						label_test = random.randint(label_status_start, label_status)
@@ -129,7 +129,7 @@ if __name__ == '__main__':
 				accuracy = right / total
 				label_status_accuracy = label_status_right / label_status_total
 				print('>> learning:', label_status, 'step:', step, 'accuracy:', accuracy, \
-				      'learning accuracy:',label_status_accuracy,label_status_total)
+				      'learning accuracy: %f'%label_status_accuracy, label_status_total)
 
 
 
@@ -138,7 +138,7 @@ if __name__ == '__main__':
 	## 3. test stage
 	print('='*20, 'test now', '='*20)
 	accuracy = 0
-	total = 40
+	total = 100
 	right = 0
 	for i in range(total):
 		# we random select total number of imgs.
@@ -149,7 +149,7 @@ if __name__ == '__main__':
 		img = Variable(db.fewshot_get_test(label_test - label_status_start, k_shot).unsqueeze(0)).cuda()
 		pred, prob = net.predict(img)  # [1, 6]
 		pred = pred[0]
-		print(i, 'pred:', pred, 'label:', label_test)
+		print(i, 'pred:', pred, 'label:', label_test, prob[0].cpu().data.numpy())
 		if pred == label_test:
 			right += 1
 

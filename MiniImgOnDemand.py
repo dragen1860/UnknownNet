@@ -22,10 +22,11 @@ class MiniImgOnDemand:
 
 		# this is a naive version of transfrom, we have different setting for few-shot learning
 		self.transform = transforms.Compose([lambda x: Image.open(x).convert('RGB'),
-		                                     transforms.RandomResizedCrop(self.resize),
+		                                     # transforms.Resize((self.resize, self.resize)),
+		                                     transforms.RandomResizedCrop(self.resize, scale=(0.8, 1.0)),
 		                                     transforms.RandomHorizontalFlip(),
 		                                     transforms.RandomVerticalFlip(),
-		                                     transforms.RandomRotation(90),
+		                                     transforms.RandomRotation(45),
 		                                     transforms.ColorJitter(0.2,0.2,0.1,0.1),
 		                                     transforms.ToTensor(),
 		                                     transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
@@ -77,8 +78,8 @@ class MiniImgOnDemand:
 		if label != self.cur_label:
 			self.batch(label)
 		num = int( len(self.buff) * 0.9 )
-		sample = random.sample(self.buff[:num], 1)
-		sample = self.transform(sample[0])
+		sample = random.sample(self.buff[:num], 1)[0]
+		sample = self.transform(sample)
 		# size: [3, 224, 224]
 		return sample
 
@@ -91,11 +92,11 @@ class MiniImgOnDemand:
 		if label != self.cur_label:
 			self.batch(label)
 		num = int( len(self.buff) * 0.9 )
-		sample = random.sample(self.buff[num:], 1)
+		sample = random.sample(self.buff[num:], 1)[0]
 
 		transform = transforms.Compose([lambda x: Image.open(x).convert('RGB'),
 			                                     transforms.Resize((self.resize, self.resize)),
-		                                     # transforms.RandomResizedCrop(self.resize),
+		                                     # transforms.RandomResizedCrop(self.resize, scale=(0.8, 1.0)),
 		                                     # transforms.RandomHorizontalFlip(),
 		                                     # transforms.RandomVerticalFlip(),
 		                                     # transforms.RandomRotation(90),
@@ -103,7 +104,7 @@ class MiniImgOnDemand:
 		                                     transforms.ToTensor(),
 		                                     transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 		                                     ])
-		sample = transform(sample[0])
+		sample = transform(sample)
 		# size: [3, 224, 224]
 		return sample
 
